@@ -1,204 +1,322 @@
 **Server Script*
 
 ```
-local Debris = game:GetService("Debris")
-local Players = game:GetService("Players")
+--[[
+The server is controlling player actions in the shop and when the player collects spirits. Spirits are the game currency and are used to give speed boosts in the shop below.
+--]]
+--Important Services
+local DataStore = game:GetService("DataStoreService"):GetDataStore("37")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local anims = {
-	"http://www.roblox.com/asset/?id=15886118703",
-	"http://www.roblox.com/asset/?id=15886190964"
-}
-local damagedAnims = {
-	"http://www.roblox.com/asset/?id=16371001338",
-	"http://www.roblox.com/asset/?id=16371010067"
-}
-local KnockbackDebounce = 5
+local ServerStorage = game:GetService("ServerStorage")
+local CollectionService = game:GetService("CollectionService")
+local Debris = game:GetService("Debris")
+--Imporant folders
+local Modules = ReplicatedStorage.Modules
+local ServerModules = ServerStorage.ServerModules
+local SpiritFolder = workspace.SpiritFolder
+local Resources = ServerStorage.Resources
+local Events = ReplicatedStorage.Events
+local Functions = ReplicatedStorage.Functions
+--Resources
+local FX = Resources.FX
+local SFX = Resources.SFX
+local Levels = Resources.Levels
+--Modules
+local ballModule = require(ServerModules.Ball)
+local collectModule = require(ServerModules.Collect)
+--Instances
+local spawnArea = workspace.SpawnArea
+local shopHitbox = workspace.ShopHitbox
+local itemRoller = workspace.ItemRoller
+local numberOfBoxes = #ServerStorage.Particles:GetChildren()
+local box0 = itemRoller.Box0
+--Loop that makes spirits which players can collect forever, there is a maximum of 10.
+coroutine.wrap(function()
+	while task.wait(0.25) do
+		if #SpiritFolder:GetChildren() < 10 then
+			local randomSize = math.random(2,5)
+			local randomPosition = spawnArea.Position + Vector3.new(math.random(-spawnArea.Size.X / 2,spawnArea.Size.X / 2),1,math.random(-spawnArea.Size.Z / 2,spawnArea.Size.Z / 2))
+			local randomColor = Color3.fromRGB(math.random(0,255),math.random(0,255),math.random(0,255))
+			local randomSize = Vector3.new(randomSize,randomSize,randomSize)
 
-local Punch = {}
-local AnimationCounter = {}
-local HitCounter = {}
-local TimeTracker = {}
-local HitPlayers = {}
-
-function Punch:ComputeWhoIsHit(model)
-	task.spawn(function()
-		table.insert(HitPlayers,Players:GetPlayerFromCharacter(model))
-		task.wait(.75)
-		table.remove(HitPlayers,HitPlayers[Players:GetPlayerFromCharacter(model)])
-	end)
-end
-
-function Punch:AnimateKnockback(humanoid)
-	task.spawn(function()
-		local animation = Instance.new("Animation")
-		animation.AnimationId = "http://www.roblox.com/asset/?id=16371280853"
-		local animTrack = humanoid:LoadAnimation(animation)
-		animTrack:Play()
-		Debris:AddItem(animation,1)
-		task.wait(1)
-		animTrack:Stop()
-		animTrack = nil
-	end)
-end
-
-function Punch:AnimateDamage(humanoid)
-	task.spawn(function()
-		local animation = Instance.new("Animation")
-		local random = math.random(1,#damagedAnims)
-		local chosen = damagedAnims[random]
-		animation.AnimationId = chosen
-		local animTrack = humanoid:LoadAnimation(animation)
-		
-		animTrack:Play()
-		Debris:AddItem(animation,.5)
-		task.wait(.5)
-		animTrack:Stop()
-		animTrack = nil
-	end)
-end
-
-function Punch:ComputeKnockback(ID,model,root,currentTime)
-	local stringID = tostring(ID)
-	if TimeTracker[stringID] ~= nil and currentTime - TimeTracker[tostring(ID)] >= KnockbackDebounce then
-		HitCounter[stringID] = 0
-		return
-	end
-	if HitCounter[stringID] == nil then
-		HitCounter[stringID] = 1
-	elseif HitCounter[stringID] ~= nil and typeof(HitCounter[tostring(ID)]) == "number" then
-		HitCounter[stringID] += 1
-	end
-	if HitCounter[stringID] == 4 then
-		self:Knockback(model:FindFirstChild("HumanoidRootPart"),root)
-		self:AnimateKnockback(model:FindFirstChild("Humanoid"))
-		HitCounter[stringID] = 0
-	end
-end
-
-function Punch:Knockback(root,puncher)
-	local equation = (puncher.CFrame.LookVector * math.huge) + Vector3.new(0,350,0)
-	if Players:GetPlayerFromCharacter(root.Parent) then
-		ReplicatedStorage.FireImpulse:FireClient(Players:GetPlayerFromCharacter(root.Parent),equation)
-	else
-		root:ApplyImpulse(equation)
-	end
-end
-
-function Punch:Particles(root)
-	local steam = script.Parent.Steam:Clone()
-	steam.Parent = root.RootAttachment
-	steam:Emit(5)
-	Debris:AddItem(steam,.5)
-end
-
-function Punch:Slowdown(humanoid)
-	task.spawn(function()
-		humanoid.WalkSpeed = 3
-		humanoid.JumpPower = 0
-		task.wait(.5)
-		humanoid.WalkSpeed = 16
-		humanoid.JumpPower = 50
-	end)
-end
-
-function Punch:Hit(newHitbox,root,DAMAGE)
-	local ID = Players:GetPlayerFromCharacter(root.Parent).UserId
-	local currentTime = os.time()
-	local playerModels = {}
-	local debounceTable = {}
-	local params = OverlapParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = {root.Parent}
-	local parts = workspace:GetPartsInPart(newHitbox)
-	if parts and parts[1] then
-		for i,part in parts do
-			if part.Parent:IsA("Model") and part.Parent:FindFirstChild("Humanoid") and part.Parent ~= root.Parent and not debounceTable[part.Parent] then
-				debounceTable[part.Parent] = part.Parent
-				table.insert(playerModels,part.Parent)
+			local randomSpirit = ballModule.Create(randomColor,randomSize,randomPosition,SpiritFolder,FX.Stars)
+			Debris:AddItem(randomSpirit,20)
+			if randomSize.X >= 4 then
+				randomSpirit:SetAttribute("Spirit",5)
+			else
+				randomSpirit:SetAttribute("Spirit",2)
 			end
 		end
-		for i,model in pairs(playerModels) do
-			if model:IsA("Model") and model:FindFirstChild("Humanoid") and model ~= root.Parent and model:GetAttribute("Blocking") == false and (model:FindFirstChild("HumanoidRootPart").Position - root.Position).Magnitude < 5 then
-				self:ComputeWhoIsHit(model)
-				self:AnimateDamage(model:FindFirstChild("Humanoid"))
-				self:Slowdown(model:FindFirstChild("Humanoid"))
-				self:Sound(root)
-				self:Particles(model:FindFirstChild("HumanoidRootPart"))
-				
-				model:FindFirstChild("Humanoid"):TakeDamage(DAMAGE)
-				
-				self:ComputeKnockback(ID,model,root,currentTime)
-				TimeTracker[tostring(ID)] = currentTime
-			elseif model:IsA("Model") and model:FindFirstChild("Humanoid") and model ~= root.Parent and model:GetAttribute("Blocking") == true and (model:FindFirstChild("HumanoidRootPart").Position - root.Position).Magnitude < 5 then
-				local distance = (model.PrimaryPart.Position - root.Parent.PrimaryPart.Position).Unit
-				local modelLook = model.PrimaryPart.CFrame.LookVector
-				
-				local dotProduct = distance:Dot(modelLook)
-				if dotProduct < .5 then return end
-				if dotProduct > .5 then
-					self:ComputeWhoIsHit(model)
-					self:AnimateDamage(model:FindFirstChild("Humanoid"))
-					self:Slowdown(model:FindFirstChild("Humanoid"))
-					self:Sound(root)
-					self:Particles(model:FindFirstChild("HumanoidRootPart"))
-					
-					model:FindFirstChild("Humanoid"):TakeDamage(DAMAGE)
-					
-					self:ComputeKnockback(ID,model,root,currentTime)
-					TimeTracker[tostring(ID)] = currentTime
+	end
+end)()
+--FX play and the player earns a reward for getting the spirit
+Events.Collect.OnServerEvent:Connect(function(player,instance,spirits,filled,unfilled)
+	collectModule:Init(player,instance,spirits,filled,unfilled,SFX.Collect)
+end)
+--Player reloads their equipped spirit
+Events.Reload.OnServerEvent:Connect(function(player)
+	coroutine.wrap(function()
+		player.CharacterAdded:Wait()
+		task.wait(0.5)
+		player.Character.Humanoid.WalkSpeed = player.leaderstats.Speed.Value
+		local attachment = ServerStorage.PlayerData[player.Name]:FindFirstChild(player.Equipped.Value):FindFirstChildWhichIsA("Attachment"):Clone()
+		attachment.Parent = player.Character.HumanoidRootPart
+	end)()
+end)
+--Added to get the saved data
+game.Players.PlayerAdded:Connect(function(player)
+	--Instancing leaderstats and values required for the shop.
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	--[--------------------------------------------------------------------------------------------------]--
+	local spirits = Instance.new("IntValue")
+	spirits.Name = "Spirits"
+	--[--------------------------------------------------------------------------------------------------]--
+	local spiritsFolder = Instance.new("Folder")
+	spiritsFolder.Name = player.Name
+	--[--------------------------------------------------------------------------------------------------]--
+	local inShop = Instance.new("BoolValue")
+	inShop.Value = false
+	inShop.Name = "InShop"
+	--[--------------------------------------------------------------------------------------------------]--
+	local equipped = Instance.new("StringValue")
+	equipped.Name = "Equipped"
+	--[--------------------------------------------------------------------------------------------------]--
+	local speed = Instance.new("IntValue")
+	speed.Name = "Speed"
+	--[--------------------------------------------------------------------------------------------------]--
+	equipped.Parent = player
+	inShop.Parent = player
+	spiritsFolder.Parent = game.ServerStorage.PlayerData
+	leaderstats.Parent = player
+	spirits.Parent = leaderstats
+	speed.Parent = leaderstats
+	--[--------------------------------------------------------------------------------------------------]--
+	--Loading Data
+	local items = "items-"..player.UserId
+	local equippedKey = "equipped-"..player.UserId
+	local spiritsKey = "spirits-"..player.UserId
+	local speedKey = "speed-"..player.UserId
+	--[--------------------------------------------------------------------------------------------------]--
+	--items
+	local itemSuccess, result1 = pcall(function()
+		return DataStore:GetAsync(items)
+	end)
+	print(result1)
+	if result1 ~= nil then
+		for i,tool in pairs(result1) do
+			if game.ServerStorage.PlayerRewards:FindFirstChild(tool) then
+				--loading the particle which is the player's speed boost
+				local particle = game.ServerStorage.PlayerRewards:FindFirstChild(tool):Clone()
+				particle.Parent = game.ServerStorage.PlayerData:FindFirstChild(player.Name)
+			end
+		end
+	else
+		print("No data")
+	end
+	--[--------------------------------------------------------------------------------------------------]--
+	--equipped
+	local equipSuccess, result2 = pcall(function()
+		return DataStore:GetAsync(equippedKey)
+	end)
+	if equipSuccess then
+		print("Success: "..result2)
+	elseif result2 then
+		warn(result2)
+	end
+	if equipSuccess and result2 ~= nil then
+		coroutine.wrap(function()
+			for _,reward in game.ServerStorage.PlayerRewards:GetChildren() do
+				if result2 == reward.Name then
+					equipped.Value = result2
+					coroutine.wrap(function()
+						repeat
+							task.wait(1)
+							local clonedReward = reward:FindFirstChild(reward.Name):Clone()
+							clonedReward.Parent = player.Character.HumanoidRootPart
+						until clonedReward.Parent == player.Character.HumanoidRootPart
+					end)()
 				end
 			end
+		end)()
+	end
+	--[--------------------------------------------------------------------------------------------------]--
+	--Spirits
+	local spiritsSuccess, result3 = pcall(function()
+		return DataStore:GetAsync(spiritsKey)
+	end)
+	if spiritsSuccess then
+		spirits.Value = result3
+		game.ServerStorage.Leaderboard:Fire(player)
+	elseif result3 then
+		warn(result3)
+	end
+	--[--------------------------------------------------------------------------------------------------]--
+	--Speed
+	local speedSuccess, result4 = pcall(function()
+		return DataStore:GetAsync(speedKey)
+	end)
+	if speedSuccess then
+		print("Success: "..result4)
+	elseif result4 then
+		warn(result4)
+	end
+	if result4 ~= nil then
+		coroutine.wrap(function()
+			speed.Value = result4
+			if result4 < 16 then return end
+			coroutine.wrap(function()
+				repeat
+					task.wait(1)
+					player.Character.Humanoid.WalkSpeed = result4
+				until player.Character.Humanoid.WalkSpeed == result4
+			end)()
+		end)()
+	end
+	--[--------------------------------------------------------------------------------------------------]--
+end)
+--Removing for Save
+game.Players.PlayerRemoving:Connect(function(player)
+	
+	local items = {}
+	for _,item in game.ServerStorage.PlayerData[player.Name]:GetChildren() do
+		table.insert(items,item.Name)
+	end
+	local itemSuccess, result1 = pcall(function()
+		return DataStore:SetAsync("items-"..player.UserId,items)
+	end)
+	
+	local equippedSuccess, result2 = pcall(function()
+		return DataStore:SetAsync("equipped-"..player.UserId,player.Equipped.Value)
+	end)
+	
+	local spiritSuccess, result3 = pcall(function()
+		return DataStore:SetAsync("spirits-"..player.UserId,player.leaderstats.Spirits.Value)
+	end)
+	
+	local speedSuccess, result4 = pcall(function()
+		return DataStore:SetAsync("speed-"..player.UserId,player.leaderstats.Speed.Value)
+	end)
+end)
+--BindToClose for studio
+game:BindToClose(function()
+	for _,player in pairs(game.Players:GetPlayers()) do
+		if player then
+			player:Kick()
 		end
 	end
+	task.wait(1)
+end)
+--Shop creation
+for i = 1,numberOfBoxes-1,1 do
+	local box = box0:Clone()
+	box:PivotTo(box0.PrimaryPart.CFrame * CFrame.new(0,0,-16*i))
+	box.Name = "Box"..i
+	box.Parent = itemRoller
 end
-
-function Punch:Reswap()
-	for i,v in HitPlayers do
-		for i,v in TimeTracker do
-			if v - tick() >= 30 then
-				table.remove(HitPlayers,v)
+--Particle creation for each stand
+for i,particle in ServerStorage.Particles:GetChildren() do
+	if particle then
+		local newParticle = particle:Clone()
+		newParticle.CFrame = itemRoller["Box"..i-1].Hitbox.CFrame
+		newParticle.Parent = itemRoller["Box"..i-1]
+	end
+end
+--Client exiting the shop
+Events.EnterExit.OnServerEvent:Connect(function(player,signal)
+	if player then
+		if signal == "Unenable" then
+			player.Character.Humanoid.WalkSpeed = 0
+			player.InShop.Value = true
+		elseif signal == "Enable" then
+			if player.Equipped.Value ~= nil or (player.Equipped.Value ~= "" and player.Character.HumanoidRootPart:FindFirstChild(ServerStorage.PlayerRewards[player.Equipped.Value])) then
+				player.Character.Humanoid.WalkSpeed = ServerStorage.PlayerRewards[player.Equipped.Value].Information:GetAttribute("Speed")
+			else
+				player.Character.Humanoid.WalkSpeed = 16
+			end
+			player.InShop.Value = false
+		end
+	end
+end)
+--Shop invokes from client
+Functions.RequestInformation.OnServerInvoke = function(player,signal,currentBox)
+	if signal == "Buying" then
+		local particleName
+		for _,comp in itemRoller[currentBox]:GetDescendants() do
+			if comp:IsA("Attachment") then
+				particleName = comp.Parent.Name
 			end
 		end
+		local information = ServerStorage.PlayerRewards[particleName].Information
+		if player.leaderstats.Spirits.Value >= information:GetAttribute("Price") and not ServerStorage.PlayerData[player.Name]:FindFirstChild(particleName) and not player.Character.HumanoidRootPart:FindFirstChild(particleName) then
+			local playerItem = ServerStorage.PlayerRewards[particleName]:Clone()
+			playerItem.Parent = ServerStorage.PlayerData[player.Name]
+
+			local newAttachment = ServerStorage.PlayerRewards[particleName]:FindFirstChild(particleName):Clone()
+			newAttachment.Parent = player.Character.HumanoidRootPart
+
+			local equippedItem = player.Character.HumanoidRootPart:FindFirstChild(player.Equipped.Value)
+			if equippedItem then
+				equippedItem:Destroy()
+			end
+			player.Character.Humanoid.WalkSpeed = information:GetAttribute("Speed")
+			player.leaderstats.Speed.Value = information:GetAttribute("Speed")
+			player.leaderstats.Spirits.Value -= information:GetAttribute("Price")
+			player.Equipped.Value = particleName
+			return "Success",information:GetAttribute("Speed")
+		elseif player.leaderstats.Spirits.Value < information:GetAttribute("Price") and not ServerStorage.PlayerData[player.Name]:FindFirstChild(particleName) then
+			print("Error")
+		elseif ServerStorage.PlayerData[player.Name]:FindFirstChild(particleName) and not player.Character.HumanoidRootPart:FindFirstChild(particleName) and (player.Equipped.Value ~= nil or player.Equipped.Value ~= "") then
+			local newAttachment = ServerStorage.PlayerRewards[particleName]:FindFirstChild(particleName):Clone()
+			if player.Character.HumanoidRootPart:FindFirstChild(player.Equipped.Value) then
+				player.Character.HumanoidRootPart:FindFirstChild(player.Equipped.Value):Destroy()
+			end
+			newAttachment.Parent = player.Character.HumanoidRootPart
+			player.Character.Humanoid.WalkSpeed = information:GetAttribute("Speed")
+			player.leaderstats.Speed.Value = information:GetAttribute("Speed")
+			player.Equipped.Value = particleName
+			return "Equippable",information:GetAttribute("Speed")
+		end
+	elseif signal == "Scrolling" then
+		local particleName
+		for _,comp in itemRoller[currentBox]:GetDescendants() do
+			if comp:IsA("Attachment") then
+				particleName = comp.Parent.Name
+			end
+		end
+		local spirits = {}
+		for i, spirit in pairs(game.ServerStorage.PlayerData[player.Name]:GetChildren()) do
+			table.insert(spirits,spirit.Name)
+		end
+		local rootParticle = player.Character.HumanoidRootPart:FindFirstChild(particleName)
+		if rootParticle and table.find(spirits,particleName) then -- They have it equipped and they have it
+			return "Equipped"
+		elseif table.find(spirits,particleName) and not rootParticle then --They don't have it equipped but they do have it
+			return "Exists"
+		elseif not table.find(spirits,particleName) and not rootParticle then
+			return "Else"
+		end
+	elseif signal == "ShowInformation" then
+		local booleanHasFirstEquipped1 = false
+		local booleanHasFirstEquipped2 = false
+		local particleName
+		for _,comp in itemRoller[currentBox]:GetDescendants() do
+			if comp:IsA("Attachment") then
+				particleName = comp.Parent.Name
+			end
+		end
+		local spirits = {}
+		for i, spirit in pairs(game.ServerStorage.PlayerData[player.Name]:GetChildren()) do
+			table.insert(spirits,spirit.Name)
+		end
+		local rootParticle = player.Character.HumanoidRootPart:FindFirstChild(particleName)
+		if table.find(spirits,particleName) and not rootParticle then
+			booleanHasFirstEquipped1 = true
+		elseif table.find(spirits,particleName) and rootParticle then
+			booleanHasFirstEquipped2 = true
+		end
+		local information = ServerStorage.PlayerRewards[particleName].Information
+		return {particleName,information:GetAttribute("Price"),information:GetAttribute("Speed"),booleanHasFirstEquipped1,booleanHasFirstEquipped2}
 	end
 end
-
-function Punch:Animate(character)
-	local animation = Instance.new("Animation")
-	local ID = Players:GetPlayerFromCharacter(character).UserId
-	
-	if AnimationCounter[tostring(ID)] == 1 then
-		AnimationCounter[tostring(ID)] += 1
-	elseif AnimationCounter[tostring(ID)] == 2 then
-		AnimationCounter[tostring(ID)] = 1
-	else
-		AnimationCounter[tostring(ID)] = 1
-	end
-	
-	local chosen = anims[AnimationCounter[tostring(ID)]]
-	
-	animation.AnimationId = chosen
-	animation.Parent = character
-	local animTrack = character.Humanoid.Animator:LoadAnimation(animation)
-	animTrack:Play()
-	Debris:AddItem(animation,1)
-end
-
-function Punch:Sound(root)
-	local sound = script.Parent.Sound:Clone()
-	sound.Parent = root
-	sound:Play()
-	Debris:AddItem(sound,1)
-end
-
-function Punch:Init(hitbox,root,DAMAGE)
-	if table.find(HitPlayers,Players:GetPlayerFromCharacter(root.Parent)) then return end
-	local newHitbox = hitbox:Clone()
-	newHitbox.CFrame = root.CFrame + root.CFrame.LookVector * 3
-	newHitbox.Parent = workspace
-	Debris:AddItem(newHitbox,.5)
-	self:Hit(newHitbox,root,DAMAGE)
-	self:Animate(root.Parent)
-end
-
-return Punch
 ```
